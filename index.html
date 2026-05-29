@@ -92,9 +92,10 @@
             transform: translateY(-6px);
         }
         .loading {
-            color: #3b82f6;
             text-align: center;
+            color: #3b82f6;
             margin: 20px 0;
+            font-size: 16px;
         }
     </style>
 </head>
@@ -120,99 +121,85 @@
 </div>
 
 <div class="tip" id="tip"></div>
-<div class="loading" id="loading">正在加载数据...</div>
+<div class="loading" id="loading">正在加载云端数据...</div>
 <div id="postList"></div>
 
 <script>
-const GIST_ID = "4ed26e3f4e9408013cfc74fcb12ee141";
-const GITHUB_TOKEN = "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";
-const GIST_API = `https://api.github.com/gists/${GIST_ID}`;
+const BIN_ID = "6a198c4521f9ee59d299a763";
+const MASTER_KEY = "$2a$10$B3g5L3BArDbvMO.hIsRpIeVyd5Vd3o/4vXqKQRtRIv4l.ohiVPbMe";
 
+const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 let users = [];
 let posts = [];
 let currentUser = localStorage.getItem("currentUser") || null;
-const ROLE = { user:0, vip:1, admin:2, owner:3 };
 
-// 初始化：先读本地缓存，再拉云端数据
+// 页面初始化
 window.onload = async () => {
-    // 1. 优先加载本地缓存，防止刷新空白
-    let localData = JSON.parse(localStorage.getItem("communityData")) || {users:[], posts:[]};
-    users = localData.users;
-    posts = localData.posts;
-    render();
-
-    // 2. 异步拉取云端最新数据
-    await loadCloudData();
+    await loadData();
     loading.style.display = "none";
     render();
 };
 
-// 拉取云端 Gist 数据
-async function loadCloudData() {
+// 读取云端数据
+async function loadData() {
     try {
-        let res = await fetch(GIST_API, {
+        const res = await fetch(API_URL, {
             headers: {
-                "Authorization": `token ${GITHUB_TOKEN}`
+                "X-Master-Key": MASTER_KEY
             }
         });
-        if (!res.ok) throw new Error("请求失败");
-        let data = await res.json();
-        let raw = data.files["data.json"].content;
-        let json = JSON.parse(raw);
-        users = json.users || [];
-        posts = json.posts || [];
-        // 同步到本地缓存
-        localStorage.setItem("communityData", JSON.stringify({users, posts}));
+        const json = await res.json();
+        users = json.record.users || [];
+        posts = json.record.posts || [];
+        localStorage.setItem("cache_data", JSON.stringify(json.record));
     } catch (e) {
-        tip.innerText = "⚠️ 云端数据加载失败，显示本地缓存";
+        tip.innerText = "⚠️ 云端加载失败，显示本地缓存";
+        const cache = JSON.parse(localStorage.getItem("cache_data")) || {users:[], posts:[]};
+        users = cache.users;
+        posts = cache.posts;
     }
 }
 
-// 保存数据到云端 + 本地双备份
-async function saveAllData() {
+// 保存数据到云端
+async function saveData() {
     const data = { users, posts };
-    // 先存本地（兜底）
-    localStorage.setItem("communityData", JSON.stringify(data));
-    // 再存云端
+    localStorage.setItem("cache_data", JSON.stringify(data));
     try {
-        await fetch(GIST_API, {
-            method: "PATCH",
+        await fetch(API_URL, {
+            method: "PUT",
             headers: {
-                "Accept": "application/vnd.github.v3+json",
-                "Authorization": `token ${GITHUB_TOKEN}`,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "X-Master-Key": MASTER_KEY
             },
-            body: JSON.stringify({
-                files: {
-                    "data.json": { content: JSON.stringify(data, null, 2) }
-                }
-            })
+            body: JSON.stringify(data)
         });
+        return true;
     } catch (e) {
-        alert("⚠️ 云端保存失败，数据仅保存在当前设备");
+        tip.innerText = "❌ 云端保存失败";
+        return false;
     }
 }
 
-// 注册
+// 注册账号（防重名 + liuchenyu 自动管理者）
 async function register() {
-    let u = username.value.trim();
-    let p = password.value.trim();
-    let a = avatarInput.value.trim() || "";
-    if (!u || !p) return alert("请输入用户名和密码");
-    if (users.find(x => x.user === u)) return alert("❌ 用户名已存在！");
+    const u = username.value.trim();
+    const p = password.value.trim();
+    const a = avatarInput.value.trim() || "";
+    if (!u || !p) return alert("请填写用户名和密码");
+    if (users.find(item => item.user === u)) return alert("用户名已存在！");
 
-    let role = u === "liuchenyu" ? "owner" : "user";
+    const role = u === "liuchenyu" ? "owner" : "user";
     users.push({ user: u, pwd: p, avatar: a, role });
-    await saveAllData();
+    await saveData();
     alert("注册成功！");
     render();
 }
 
 // 登录
 async function login() {
-    let u = username.value.trim();
-    let p = password.value.trim();
-    let user = users.find(x => x.user === u && x.pwd === p);
+    const u = username.value.trim();
+    const p = password.value.trim();
+    const user = users.find(item => item.user === u && item.pwd === p);
     if (!user) return alert("账号或密码错误");
 
     currentUser = u;
@@ -220,18 +207,18 @@ async function login() {
     render();
 }
 
-// 退出
+// 退出登录
 function logout() {
     currentUser = null;
     localStorage.removeItem("currentUser");
     render();
 }
 
-// 发帖
+// 发布帖子
 async function sendPost() {
     if (!currentUser) return;
-    let t = postTitle.value.trim();
-    let c = postContent.value.trim();
+    const t = postTitle.value.trim();
+    const c = postContent.value.trim();
     if (!t || !c) return alert("标题和内容不能为空");
 
     posts.unshift({
@@ -243,31 +230,32 @@ async function sendPost() {
     });
     postTitle.value = "";
     postContent.value = "";
-    await saveAllData();
+    const ok = await saveData();
+    if(ok) tip.innerText = "✅ 发布成功，所有人可见";
     render();
 }
 
-// 删帖
+// 删除帖子（权限控制）
 async function deletePost(id) {
-    let post = posts.find(x => x.id === id);
-    let me = users.find(x => x.user === currentUser);
+    const post = posts.find(item => item.id === id);
+    const me = users.find(item => item.user === currentUser);
     if (!me) return;
 
-    let isOwner = me.role === "owner";
-    let isAdmin = me.role === "admin" || isOwner;
-    let isAuthor = post.user === currentUser;
+    const isOwner = me.role === "owner";
+    const isAdmin = me.role === "admin" || isOwner;
+    const isAuthor = post.user === currentUser;
 
-    if (!isOwner && !isAdmin && !isAuthor) return alert("你没有权限删除");
+    if (!isOwner && !isAdmin && !isAuthor) return alert("你没有删除权限");
     if (!confirm("确定删除该帖子？")) return;
 
-    posts = posts.filter(x => x.id !== id);
-    await saveAllData();
+    posts = posts.filter(item => item.id !== id);
+    await saveData();
     render();
 }
 
 // 渲染页面
 function render() {
-    let me = users.find(x => x.user === currentUser);
+    const me = users.find(item => item.user === currentUser);
 
     userInfo.innerHTML = currentUser
         ? `<div class="user-row">
@@ -280,14 +268,13 @@ function render() {
 
     loginBox.style.display = currentUser ? "none" : "block";
     postBox.style.display = currentUser ? "block" : "none";
-    tip.innerHTML = currentUser ? "" : "⚠️ 未登录只能浏览，不能发帖";
 
     postList.innerHTML = "";
     posts.forEach(post => {
-        let author = users.find(x => x.user === post.user);
-        let avatar = author?.avatar || "https://picsum.photos/64/64";
-        let role = author?.role || "user";
-        let showDel = me && (me.role === "owner" || me.role === "admin" || post.user === currentUser);
+        const author = users.find(item => item.user === post.user);
+        const avatar = author?.avatar || "https://picsum.photos/64/64";
+        const role = author?.role || "user";
+        const showDel = me && (me.role === "owner" || me.role === "admin" || post.user === currentUser);
 
         postList.innerHTML += `
         <div class="card">
