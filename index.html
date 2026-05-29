@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>简易帖子社区</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f6f7f9;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        .card {
+            background: white;
+            padding: 16px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        button {
+            padding: 8px 14px;
+            background: #4e89ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #3671e6;
+        }
+        .post-form {
+            display: none;
+        }
+        .tip {
+            color: #666;
+            margin: 10px 0;
+        }
+        .user {
+            color: #555;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>简易帖子社区</h1>
+    <div id="userInfo">未登录</div>
+</div>
+
+<!-- 登录注册 -->
+<div class="card" id="loginBox">
+    <input id="username" placeholder="用户名">
+    <input id="password" placeholder="密码" type="password">
+    <button onclick="login()">登录</button>
+    <button onclick="register()">注册</button>
+</div>
+
+<!-- 发帖框（登录才显示） -->
+<div class="card post-form" id="postBox">
+    <input id="postTitle" placeholder="标题">
+    <textarea rows="4" id="postContent" placeholder="内容"></textarea>
+    <button onclick="sendPost()">发布帖子</button>
+</div>
+
+<!-- 提示 -->
+<div class="tip" id="tip"></div>
+
+<!-- 帖子列表 -->
+<div id="postList"></div>
+
+<script>
+// 本地存储用户和帖子
+let users = JSON.parse(localStorage.getItem("users")) || [];
+let posts = JSON.parse(localStorage.getItem("posts")) || [];
+let currentUser = localStorage.getItem("currentUser");
+
+// 页面加载刷新界面
+window.onload = render;
+
+// 注册
+function register() {
+    let u = username.value;
+    let p = password.value;
+    if (!u || !p) return alert("请输入用户名和密码");
+    if (users.find(x => x.user === u)) return alert("用户名已存在");
+    users.push({ user: u, pwd: p });
+    localStorage.setItem("users", JSON.stringify(users));
+    alert("注册成功");
+}
+
+// 登录
+function login() {
+    let u = username.value;
+    let p = password.value;
+    let user = users.find(x => x.user === u && x.pwd === p);
+    if (!user) return alert("账号或密码错误");
+    currentUser = u;
+    localStorage.setItem("currentUser", u);
+    render();
+}
+
+// 退出登录
+function logout() {
+    currentUser = null;
+    localStorage.removeItem("currentUser");
+    render();
+}
+
+// 发布帖子
+function sendPost() {
+    if (!currentUser) return;
+    let t = postTitle.value.trim();
+    let c = postContent.value.trim();
+    if (!t || !c) return alert("标题和内容都要写");
+    posts.unshift({
+        user: currentUser,
+        title: t,
+        content: c,
+        time: new Date().toLocaleString()
+    });
+    localStorage.setItem("posts", JSON.stringify(posts));
+    postTitle.value = "";
+    postContent.value = "";
+    render();
+}
+
+// 渲染界面
+function render() {
+    userInfo.innerHTML = currentUser
+        ? `${currentUser} <button onclick="logout()">退出</button>`
+        : "未登录";
+
+    loginBox.style.display = currentUser ? "none" : "block";
+    postBox.style.display = currentUser ? "block" : "none";
+    tip.innerHTML = currentUser ? "" : "⚠️ 未登录只能浏览，不能发帖";
+
+    postList.innerHTML = "";
+    posts.forEach(p => {
+        postList.innerHTML += `
+        <div class="card">
+            <div class="user">${p.user} · ${p.time}</div>
+            <h3>${p.title}</h3>
+            <p>${p.content}</p>
+        </div>`;
+    });
+}
+</script>
+</body>
+</html>
