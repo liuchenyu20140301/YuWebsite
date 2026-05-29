@@ -91,6 +91,11 @@
             float: right;
             transform: translateY(-6px);
         }
+        .loading {
+            color: #3b82f6;
+            text-align: center;
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
@@ -115,43 +120,60 @@
 </div>
 
 <div class="tip" id="tip"></div>
+<div class="loading" id="loading">正在加载数据...</div>
 <div id="postList"></div>
 
 <script>
-// 已填入你的 Gist ID 和 Token
 const GIST_ID = "4ed26e3f4e9408013cfc74fcb12ee141";
 const GITHUB_TOKEN = "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";
-
 const GIST_API = `https://api.github.com/gists/${GIST_ID}`;
+
 let users = [];
 let posts = [];
 let currentUser = localStorage.getItem("currentUser") || null;
-
 const ROLE = { user:0, vip:1, admin:2, owner:3 };
 
+// 初始化：先读本地缓存，再拉云端数据
 window.onload = async () => {
-    await loadData();
+    // 1. 优先加载本地缓存，防止刷新空白
+    let localData = JSON.parse(localStorage.getItem("communityData")) || {users:[], posts:[]};
+    users = localData.users;
+    posts = localData.posts;
+    render();
+
+    // 2. 异步拉取云端最新数据
+    await loadCloudData();
+    loading.style.display = "none";
     render();
 };
 
-// 从云端 Gist 读取数据
-async function loadData() {
+// 拉取云端 Gist 数据
+async function loadCloudData() {
     try {
-        let res = await fetch(GIST_API);
+        let res = await fetch(GIST_API, {
+            headers: {
+                "Authorization": `token ${GITHUB_TOKEN}`
+            }
+        });
+        if (!res.ok) throw new Error("请求失败");
         let data = await res.json();
         let raw = data.files["data.json"].content;
         let json = JSON.parse(raw);
         users = json.users || [];
         posts = json.posts || [];
+        // 同步到本地缓存
+        localStorage.setItem("communityData", JSON.stringify({users, posts}));
     } catch (e) {
-        console.error("读取Gist失败：", e);
-        users = [];
-        posts = [];
+        tip.innerText = "⚠️ 云端数据加载失败，显示本地缓存";
     }
 }
 
-// 保存数据到云端 Gist
-async function saveData() {
+// 保存数据到云端 + 本地双备份
+async function saveAllData() {
+    const data = { users, posts };
+    // 先存本地（兜底）
+    localStorage.setItem("communityData", JSON.stringify(data));
+    // 再存云端
     try {
         await fetch(GIST_API, {
             method: "PATCH",
@@ -162,19 +184,16 @@ async function saveData() {
             },
             body: JSON.stringify({
                 files: {
-                    "data.json": {
-                        content: JSON.stringify({ users, posts }, null, 2)
-                    }
+                    "data.json": { content: JSON.stringify(data, null, 2) }
                 }
             })
         });
     } catch (e) {
-        console.error("保存Gist失败：", e);
-        alert("数据保存失败，请检查网络或Token权限");
+        alert("⚠️ 云端保存失败，数据仅保存在当前设备");
     }
 }
 
-// 注册（防重名，liuchenyu 自动为最高管理者）
+// 注册
 async function register() {
     let u = username.value.trim();
     let p = password.value.trim();
@@ -182,11 +201,11 @@ async function register() {
     if (!u || !p) return alert("请输入用户名和密码");
     if (users.find(x => x.user === u)) return alert("❌ 用户名已存在！");
 
-    let role = (u === "liuchenyu") ? "owner" : "user";
+    let role = u === "liuchenyu" ? "owner" : "user";
     users.push({ user: u, pwd: p, avatar: a, role });
-
-    await saveData();
+    await saveAllData();
     alert("注册成功！");
+    render();
 }
 
 // 登录
@@ -201,14 +220,14 @@ async function login() {
     render();
 }
 
-// 退出登录
+// 退出
 function logout() {
     currentUser = null;
     localStorage.removeItem("currentUser");
     render();
 }
 
-// 发布帖子
+// 发帖
 async function sendPost() {
     if (!currentUser) return;
     let t = postTitle.value.trim();
@@ -222,14 +241,13 @@ async function sendPost() {
         content: c,
         time: new Date().toLocaleString()
     });
-
     postTitle.value = "";
     postContent.value = "";
-    await saveData();
+    await saveAllData();
     render();
 }
 
-// 删除帖子（权限控制）
+// 删帖
 async function deletePost(id) {
     let post = posts.find(x => x.id === id);
     let me = users.find(x => x.user === currentUser);
@@ -243,7 +261,7 @@ async function deletePost(id) {
     if (!confirm("确定删除该帖子？")) return;
 
     posts = posts.filter(x => x.id !== id);
-    await saveData();
+    await saveAllData();
     render();
 }
 
